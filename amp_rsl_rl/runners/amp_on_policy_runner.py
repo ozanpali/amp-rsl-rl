@@ -177,7 +177,7 @@ class AMPOnPolicyRunner:
             * 2,  # the discriminator takes in the concatenation of the current and next observation
             self.discriminator_cfg["hidden_dims"],
             self.discriminator_cfg["reward_scale"],
-            self.device,
+            device=self.device,
         ).to(self.device)
 
         # Initialize the PPO algorithm
