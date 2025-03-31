@@ -42,6 +42,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
         local_dir,  # Where to save the files
         robot_folder=robot_folder,  # Which robot dataset to use
         files=files,  # Which specific motion files to download
+        repo_id=repo_id,  # Repository ID on Hugging Face Hub
     )
 
     # =============================================
