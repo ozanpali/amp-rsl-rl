@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "amp-rsl-rl"
-description = "Adversarial Motion Prior (AMP) reinforcement learning extension for RSL-RL, implementing PPO-based training with motion prior integration."
+description = "Adversarial Motion Prior (AMP) reinforcement learning extension for PPO based on RSL-RL."
 authors = [
     { name = "Giulio Romualdi", email = "giulio.romualdi@iit.it" },
     { name = "Giuseppe L'Erario", email = "giuseppe.lerario@iit.it" }
