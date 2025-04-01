@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Import required libraries
-from huggingface_hub import hf_hub_download  # For downloading from Hugging Face Hub
 from pathlib import Path  # For path manipulation
 import tempfile  # For creating temporary directories
 from amp_rsl_rl.utils import (
