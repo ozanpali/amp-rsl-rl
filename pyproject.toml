@@ -39,6 +39,9 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.optional-dependencies]
+examples = ["huggingface_hub"]
+
 [project.urls]
 Homepage = "https://github.com/ami-iit/amp-rsl-rl"
 Repository = "https://github.com/ami-iit/amp-rsl-rl"
@@ -47,8 +50,3 @@ Changelog = "https://github.com/ami-iit/amp-rsl-rl/releases"
 
 [tool.setuptools_scm]
 local_scheme = "dirty-tag"
-
-[tool.setuptools.packages.find]
-where = ["amp_rsl_rl"]
-include = ["amp_rsl_rl*"]
-exclude = ["examples*"]
