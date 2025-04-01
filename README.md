@@ -18,6 +18,11 @@ Or in editable/development mode:
 pip install -e .
 ```
 
+If you want to run the examples, please install it with
+```bash
+pip install .[examples]
+```
+
 The required dependencies include:
 
 - `numpy`
