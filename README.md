@@ -6,19 +6,33 @@ AMP-RSL-RL is a reinforcement learning library that extends the Proximal Policy 
 
 ## 📦 Installation
 
-First, clone the repository and install it using:
+The repository is available on PyPI under the package name **amp-rl-rsl**. You can install it directly using pip:
 
 ```bash
-pip install .
+pip install amp-rl-rsl
 ```
 
-Or in editable/development mode:
+Alternatively, if you prefer to clone the repository and install it locally, follow these steps:
+
+1. Clone the repository:
+    ```bash
+    git clone https://github.com/<your-username>/amp_rsl_rl.git
+    cd amp_rsl_rl
+    ```
+
+2. Install the package:
+    ```bash
+    pip install .
+    ```
+
+For editable/development mode:
 
 ```bash
 pip install -e .
 ```
 
-If you want to run the examples, please install it with
+If you want to run the examples, please install with:
+
 ```bash
 pip install .[examples]
 ```
@@ -30,7 +44,7 @@ The required dependencies include:
 - `torch`
 - `rsl-rl-lib`
 
-These will be automatically installed via `pip`.
+These will be automatically installed via pip.
 
 ---
 
