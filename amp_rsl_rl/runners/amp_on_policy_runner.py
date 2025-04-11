@@ -9,27 +9,22 @@ from __future__ import annotations
 import os
 import statistics
 import time
-import rsl_rl.utils
-import torch
 from collections import deque
+
+import torch
 from torch.utils.tensorboard import SummaryWriter as TensorboardSummaryWriter
 
 import rsl_rl
+import rsl_rl.utils
+from rsl_rl.env import VecEnv
+from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, EmpiricalNormalization
+from rsl_rl.utils import store_code_state
+
 from amp_rsl_rl.utils import Normalizer
 from amp_rsl_rl.utils import AMPLoader
 from amp_rsl_rl.algorithms import AMP_PPO
 from amp_rsl_rl.networks import Discriminator
-
-from isaaclab_rl.rsl_rl import (
-    export_policy_as_onnx,
-)
-
-from rsl_rl.env import VecEnv
-
-from rsl_rl.modules import ActorCritic, ActorCriticRecurrent, EmpiricalNormalization
-
-
-from rsl_rl.utils import store_code_state
+from amp_rsl_rl.utils import export_policy_as_onnx
 
 
 class AMPOnPolicyRunner:
@@ -508,13 +503,24 @@ class AMPOnPolicyRunner:
             #   f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n""")
 
         log_string += ep_string
+
+        # make the eta in H:M:S
+        eta_seconds = (
+            self.tot_time
+            / (locs["it"] + 1)
+            * (locs["num_learning_iterations"] - locs["it"])
+        )
+
+        # Convert seconds to H:M:S
+        eta_h, rem = divmod(eta_seconds, 3600)
+        eta_m, eta_s = divmod(rem, 60)
+
         log_string += (
             f"""{'-' * width}\n"""
             f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
             f"""{'Iteration time:':>{pad}} {iteration_time:.2f}s\n"""
             f"""{'Total time:':>{pad}} {self.tot_time:.2f}s\n"""
-            f"""{'ETA:':>{pad}} {self.tot_time / (locs['it'] + 1) * (
-                               locs['num_learning_iterations'] - locs['it']):.1f}s\n"""
+            f"""{'ETA:':>{pad}} {int(eta_h)}h {int(eta_m)}m {int(eta_s)}s\n"""
         )
         print(log_string)
 
