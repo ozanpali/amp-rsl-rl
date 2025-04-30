@@ -482,18 +482,10 @@ class AMP_PPO:
             # Normalize AMP observations if a normalizer is provided.
             if self.amp_normalizer is not None:
                 with torch.no_grad():
-                    policy_state = self.amp_normalizer.normalize_torch(
-                        policy_state, self.device
-                    )
-                    policy_next_state = self.amp_normalizer.normalize_torch(
-                        policy_next_state, self.device
-                    )
-                    expert_state = self.amp_normalizer.normalize_torch(
-                        expert_state, self.device
-                    )
-                    expert_next_state = self.amp_normalizer.normalize_torch(
-                        expert_next_state, self.device
-                    )
+                    policy_state = self.amp_normalizer.normalize(policy_state)
+                    policy_next_state = self.amp_normalizer.normalize(policy_next_state)
+                    expert_state = self.amp_normalizer.normalize(expert_state)
+                    expert_next_state = self.amp_normalizer.normalize(expert_next_state)
 
             # Pass concatenated state transitions to the discriminator.
             policy_d = self.discriminator(
@@ -526,8 +518,8 @@ class AMP_PPO:
 
             # Update the normalizer with current policy and expert AMP observations.
             if self.amp_normalizer is not None:
-                self.amp_normalizer.update(policy_state.cpu().numpy())
-                self.amp_normalizer.update(expert_state.cpu().numpy())
+                self.amp_normalizer.update(policy_state)
+                self.amp_normalizer.update(expert_state)
 
             # Compute probabilities from the discriminator logits.
             policy_d_prob = torch.sigmoid(policy_d)
