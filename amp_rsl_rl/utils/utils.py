@@ -3,11 +3,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-
 from typing import Tuple, Union
 
 import torch
-import numpy as np
 
 
 class RunningMeanStd:
@@ -21,47 +19,60 @@ class RunningMeanStd:
         shape (Tuple[int, ...]): Shape of the data (e.g., observation shape).
     """
 
-    def __init__(self, epsilon: float = 1e-4, shape: Tuple[int, ...] = ()) -> None:
-        self.mean = np.zeros(shape, dtype=np.float64)
-        self.var = np.ones(shape, dtype=np.float64)
-        self.count = epsilon
+    def __init__(
+        self,
+        epsilon: float = 1e-4,
+        shape: Tuple[int, ...] = (),
+        device: Union[str, torch.device] = "cpu",
+    ) -> None:
+        self.device = torch.device(device)
+        self.mean = torch.zeros(shape, dtype=torch.float32, device=self.device)
+        self.var = torch.ones(shape, dtype=torch.float32, device=self.device)
+        self.count = torch.tensor(epsilon, dtype=torch.float32, device=self.device)
 
-    def update(self, arr: np.ndarray) -> None:
+    @torch.no_grad()
+    def update(self, arr: torch.Tensor) -> None:
         """
         Updates the running statistics using a new batch of data.
 
         Args:
-            arr (np.ndarray): Batch of data (batch_size, *shape).
+            arr (torch.Tensor): Batch of data (batch_size, *shape).
         """
-        batch_mean = np.mean(arr, axis=0)
-        batch_var = np.var(arr, axis=0)
-        batch_count = arr.shape[0]
-        self.update_from_moments(batch_mean, batch_var, batch_count)
+        batch = arr.to(self.device, dtype=torch.float32)
+        batch_mean = batch.mean(dim=0)
+        batch_var = batch.var(dim=0, unbiased=False)
+        batch_count = torch.tensor(
+            batch.shape[0], dtype=torch.float32, device=self.device
+        )
+        self._update_from_moments(batch_mean, batch_var, batch_count)
 
-    def update_from_moments(
-        self, batch_mean: np.ndarray, batch_var: np.ndarray, batch_count: int
+    @torch.no_grad()
+    def _update_from_moments(
+        self,
+        batch_mean: torch.Tensor,
+        batch_var: torch.Tensor,
+        batch_count: torch.Tensor,
     ) -> None:
         """
         Updates statistics using precomputed batch mean, variance, and count.
 
         Args:
-            batch_mean (np.ndarray): Mean of the batch.
-            batch_var (np.ndarray): Variance of the batch.
-            batch_count (int): Number of samples in the batch.
+            batch_mean (torch.Tensor): Mean of the batch.
+            batch_var (torch.Tensor): Variance of the batch.
+            batch_count (torch.Tensor): Number of samples in the batch.
         """
         delta = batch_mean - self.mean
-        tot_count = self.count + batch_count
+        total_count = self.count + batch_count
 
-        new_mean = self.mean + delta * batch_count / tot_count
-
+        new_mean = self.mean + delta * batch_count / total_count
         m_a = self.var * self.count
         m_b = batch_var * batch_count
-        m_2 = m_a + m_b + np.square(delta) * self.count * batch_count / tot_count
-        new_var = m_2 / tot_count
+        m2 = m_a + m_b + delta.pow(2) * self.count * batch_count / total_count
+        new_var = m2 / total_count
 
-        self.mean = new_mean
-        self.var = new_var
-        self.count = tot_count
+        self.mean.copy_(new_mean)
+        self.var.copy_(new_var)
+        self.count.copy_(total_count)
 
 
 class Normalizer(RunningMeanStd):
@@ -79,49 +90,29 @@ class Normalizer(RunningMeanStd):
         input_dim: Union[int, Tuple[int, ...]],
         epsilon: float = 1e-4,
         clip_obs: float = 10.0,
+        device: Union[str, torch.device] = "cpu",
     ) -> None:
-        shape = (input_dim,) if isinstance(input_dim, int) else input_dim
-        super().__init__(epsilon=epsilon, shape=shape)
+        shape = (input_dim,) if isinstance(input_dim, int) else tuple(input_dim)
+        super().__init__(epsilon=epsilon, shape=shape, device=device)
         self.epsilon = epsilon
         self.clip_obs = clip_obs
 
-    def normalize(self, input: np.ndarray) -> np.ndarray:
+    def normalize(self, input: torch.Tensor) -> torch.Tensor:
         """
         Normalizes input using running mean and std, and clips the result.
 
         Args:
-            input (np.ndarray): Input array to normalize.
-
-        Returns:
-            np.ndarray: Normalized and clipped array.
-        """
-        return np.clip(
-            (input - self.mean) / np.sqrt(self.var + self.epsilon),
-            -self.clip_obs,
-            self.clip_obs,
-        )
-
-    def normalize_torch(self, input: torch.Tensor, device: str) -> torch.Tensor:
-        """
-        Torch version of normalize(), for use in PyTorch graphs.
-
-        Args:
             input (torch.Tensor): Input tensor to normalize.
-            device (str): Device on which to place the computation ('cpu' or 'cuda').
 
         Returns:
             torch.Tensor: Normalized and clipped tensor.
         """
-        mean_torch = torch.tensor(self.mean, device=device, dtype=torch.float32)
-        std_torch = torch.sqrt(
-            torch.tensor(self.var + self.epsilon, device=device, dtype=torch.float32)
-        )
-        return torch.clamp(
-            (input - mean_torch) / std_torch,
-            -self.clip_obs,
-            self.clip_obs,
-        )
+        x = input.to(self.device, dtype=torch.float32)
+        std = (self.var + self.epsilon).sqrt()
+        y = (x - self.mean) / std
+        return torch.clamp(y, -self.clip_obs, self.clip_obs)
 
+    @torch.no_grad()
     def update_normalizer(self, rollouts, expert_loader) -> None:
         """
         Updates running statistics using samples from both policy and expert trajectories.
@@ -130,16 +121,13 @@ class Normalizer(RunningMeanStd):
             rollouts: Object with method `feed_forward_generator_amp(...)`.
             expert_loader: Dataloader or similar object providing expert batches.
         """
-        policy_data_generator = rollouts.feed_forward_generator_amp(
+        policy_generator = rollouts.feed_forward_generator_amp(
             None, mini_batch_size=expert_loader.batch_size
         )
-        expert_data_generator = expert_loader.dataset.feed_forward_generator_amp(
+        expert_generator = expert_loader.dataset.feed_forward_generator_amp(
             expert_loader.batch_size
         )
 
-        for expert_batch, policy_batch in zip(
-            expert_data_generator, policy_data_generator
-        ):
-            self.update(
-                torch.vstack(tuple(policy_batch) + tuple(expert_batch)).cpu().numpy()
-            )
+        for expert_batch, policy_batch in zip(expert_generator, policy_generator):
+            batch = torch.cat((*expert_batch, *policy_batch), dim=0)
+            self.update(batch)

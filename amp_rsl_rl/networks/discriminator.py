@@ -116,8 +116,8 @@ class Discriminator(nn.Module):
         """
         with torch.no_grad():
             if normalizer is not None:
-                state = normalizer.normalize_torch(state, self.device)
-                next_state = normalizer.normalize_torch(next_state, self.device)
+                state = normalizer.normalize(state)
+                next_state = normalizer.normalize(next_state)
 
             d = self.forward(torch.cat([state, next_state], dim=-1))
             reward = torch.clamp(1 - (1 / 4) * torch.square(d - 1), min=0)
@@ -142,8 +142,8 @@ class Discriminator(nn.Module):
         """
         with torch.no_grad():
             if normalizer is not None:
-                state = normalizer.normalize_torch(state, self.device)
-                next_state = normalizer.normalize_torch(next_state, self.device)
+                state = normalizer.normalize(state)
+                next_state = normalizer.normalize(next_state)
 
             discriminator_logit = self.forward(torch.cat([state, next_state], dim=-1))
             prob = torch.sigmoid(discriminator_logit)

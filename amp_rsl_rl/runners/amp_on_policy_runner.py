@@ -166,7 +166,7 @@ class AMPOnPolicyRunner:
         # self.env.unwrapped.scene["robot"].joint_names)
 
         # amp_data = AMPLoader(num_amp_obs, self.device)
-        self.amp_normalizer = Normalizer(num_amp_obs)
+        self.amp_normalizer = Normalizer(num_amp_obs, device=self.device)
         self.discriminator = Discriminator(
             num_amp_obs
             * 2,  # the discriminator takes in the concatenation of the current and next observation
