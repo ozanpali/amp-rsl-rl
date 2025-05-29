@@ -59,8 +59,8 @@ class AMP_PPO:
         Maximum gradient norm for clipping gradients during backpropagation.
     use_clipped_value_loss : bool, default=True
         Flag indicating whether to use a clipped value loss, as in the original PPO implementation.
-    use_smooth_clamping : bool, default=False
-        Flag indicating whether to use exponential clamping on the value loos.
+    use_smooth_ratio_clipping : bool, default=False
+        Flag indicating whether to apply smooth (exponential) clipping to the PPO policy ratio.
     schedule : str, default="fixed"
         Learning rate schedule mode ("fixed" or "adaptive" based on KL divergence).
     desired_kl : float, default=0.01
@@ -92,7 +92,7 @@ class AMP_PPO:
         schedule: str = "fixed",
         desired_kl: float = 0.01,
         amp_replay_buffer_size: int = 100000,
-        use_smooth_clamping: bool = False,
+        use_smooth_ratio_clipping: bool = False,
         device: str = "cpu",
     ) -> None:
         # Set device and learning hyperparameters
@@ -149,7 +149,7 @@ class AMP_PPO:
         self.lam: float = lam
         self.max_grad_norm: float = max_grad_norm
         self.use_clipped_value_loss: bool = use_clipped_value_loss
-        self.use_smooth_clamped_loss = use_smooth_clamped_loss
+        self.use_smooth_ratio_clipping: bool = use_smooth_ratio_clipping
 
     def init_storage(
         self,
@@ -460,7 +460,8 @@ class AMP_PPO:
             min_ = 1.0 - self.clip_param
             max_ = 1.0 + self.clip_param
 
-            if self.use_smooth_clamping:
+            # Smooth clamping for the ratio if enabled.
+            if self.use_smooth_ratio_clipping:
                 clipped_ratio = (
                     1
                     / (1 + torch.exp((-(ratio - min_) / (max_ - min_) + 0.5) * 4))
