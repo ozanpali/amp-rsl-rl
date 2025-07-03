@@ -104,6 +104,7 @@ class AMP_PPO:
         # Set up the discriminator and move it to the appropriate device.
         self.discriminator: Discriminator = discriminator.to(self.device)
         self.amp_transition: RolloutStorage.Transition = RolloutStorage.Transition()
+        self.discriminator_loss = torch.nn.BCEWithLogitsLoss()
 
         # Determine observation dimension used in the replay buffer.
         # The discriminator expects concatenated observations, so the replay buffer uses half the dimension.
@@ -317,9 +318,8 @@ class AMP_PPO:
         torch.Tensor
             The computed policy loss.
         """
-        loss_fn = torch.nn.BCEWithLogitsLoss()
-        expected = torch.zeros_like(discriminator_output).to(self.device)
-        return loss_fn(discriminator_output, expected)
+        expected = torch.zeros_like(discriminator_output, device=self.device)
+        return self.discriminator_loss(discriminator_output, expected)
 
     def discriminator_expert_loss(
         self, discriminator_output: torch.Tensor
@@ -338,9 +338,8 @@ class AMP_PPO:
         torch.Tensor
             The computed expert loss.
         """
-        loss_fn = torch.nn.BCEWithLogitsLoss()
-        expected = torch.ones_like(discriminator_output).to(self.device)
-        return loss_fn(discriminator_output, expected)
+        expected = torch.ones_like(discriminator_output, device=self.device)
+        return self.discriminator_loss(discriminator_output, expected)
 
     def update(self) -> Tuple[float, float, float, float, float, float, float, float]:
         """
@@ -503,12 +502,19 @@ class AMP_PPO:
                     expert_state = self.amp_normalizer.normalize(expert_state)
                     expert_next_state = self.amp_normalizer.normalize(expert_next_state)
 
-            # Pass concatenated state transitions to the discriminator.
-            policy_d = self.discriminator(
-                torch.cat([policy_state, policy_next_state], dim=-1)
+            # Concatenate policy and expert AMP observations for the discriminator input.
+            B_pol = policy_state.size(0)
+            discriminator_input = torch.cat(
+                (
+                    torch.cat([policy_state, policy_next_state], dim=-1),
+                    torch.cat([expert_state, expert_next_state], dim=-1),
+                ),
+                dim=0,
             )
-            expert_d = self.discriminator(
-                torch.cat([expert_state, expert_next_state], dim=-1)
+            discriminator_output = self.discriminator(discriminator_input)
+            policy_d, expert_d = (
+                discriminator_output[:B_pol],
+                discriminator_output[B_pol:],
             )
 
             # Compute discriminator losses for expert and policy data.
