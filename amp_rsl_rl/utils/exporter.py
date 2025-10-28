@@ -138,7 +138,8 @@ class _OnnxPolicyExporter(torch.nn.Module):
         else:
             obs = (
                 torch.zeros(1, self.actor.obs_dim)
-                if isinstance(self.actor, ActorMoE)
+                #if isinstance(self.actor, ActorMoE)
+                if hasattr(self.actor, "obs_dim")
                 else torch.zeros(1, self.actor[0].in_features)
             )
             torch.onnx.export(
