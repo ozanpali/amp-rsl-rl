@@ -6,8 +6,9 @@
 import torch
 import torch.nn as nn
 from torch import autograd
-from rsl_rl.utils import utils
 from torch.nn import functional as F
+
+from rsl_rl.networks import EmpiricalNormalization
 
 
 class Discriminator(nn.Module):
@@ -20,10 +21,12 @@ class Discriminator(nn.Module):
         input_dim (int): Dimension of the concatenated input state (state + next state).
         hidden_layer_sizes (list): List of hidden layer sizes.
         reward_scale (float): Scale factor for the computed reward.
-        device (str): Device to run the model on ('cpu' or 'cuda').
+        reward_clamp_epsilon (float): Numerical epsilon used when clamping rewards.
+        device (str | torch.device): Device to run the model on.
         loss_type (str): Type of loss function to use ('BCEWithLogits' or 'Wasserstein').
         eta_wgan (float): Scaling factor for the Wasserstein loss (if used).
         use_minibatch_std (bool): Whether to use minibatch standard deviation in the network
+        empirical_normalization (bool): Whether to normalize AMP observations empirically before scoring.
     """
 
     def __init__(
@@ -31,15 +34,16 @@ class Discriminator(nn.Module):
         input_dim: int,
         hidden_layer_sizes: list[int],
         reward_scale: float,
-        reward_clamp_epsilon: float = 0.0001,
-        device: str = "cpu",
+        reward_clamp_epsilon: float = 1.0e-4,
+        device: str | torch.device = "cpu",
         loss_type: str = "BCEWithLogits",
         eta_wgan: float = 0.3,
         use_minibatch_std: bool = True,
+        empirical_normalization: bool = False,
     ):
-        super(Discriminator, self).__init__()
+        super().__init__()
 
-        self.device = device
+        self.device = torch.device(device)
         self.input_dim = input_dim
         self.reward_scale = reward_scale
         self.reward_clamp_epsilon = reward_clamp_epsilon
@@ -51,12 +55,19 @@ class Discriminator(nn.Module):
             layers.append(nn.ReLU())
             curr_in_dim = hidden_dim
 
-        self.trunk = nn.Sequential(*layers).to(device)
+        self.trunk = nn.Sequential(*layers)
         final_in_dim = hidden_layer_sizes[-1] + (1 if use_minibatch_std else 0)
-        self.linear = nn.Linear(final_in_dim, 1).to(device)
+        self.linear = nn.Linear(final_in_dim, 1)
 
-        self.trunk.train()
-        self.linear.train()
+        self.empirical_normalization = empirical_normalization
+        amp_obs_dim = input_dim // 2
+        if empirical_normalization:
+            self.amp_normalizer = EmpiricalNormalization(shape=[amp_obs_dim])
+        else:
+            self.amp_normalizer = nn.Identity()
+
+        self.to(self.device)
+        self.train()
         self.use_minibatch_std = use_minibatch_std
         self.loss_type = loss_type if loss_type is not None else "BCEWithLogits"
         if self.loss_type == "BCEWithLogits":
@@ -79,6 +90,14 @@ class Discriminator(nn.Module):
         Returns:
             Tensor: Discriminator output logits/scores.
         """
+
+        # Normalize AMP observations. If not enabled the normalizer is identity.
+        # split state and next_state and apply normalization
+        state, next_state = torch.split(x, self.input_dim // 2, dim=-1)
+        state = self.amp_normalizer(state)
+        next_state = self.amp_normalizer(next_state)
+        x = torch.cat([state, next_state], dim=-1)
+
         h = self.trunk(x)
         if self.use_minibatch_std:
             s = self._minibatch_std_scalar(h)
@@ -96,23 +115,19 @@ class Discriminator(nn.Module):
         self,
         state: torch.Tensor,
         next_state: torch.Tensor,
-        normalizer=None,
     ) -> torch.Tensor:
         """Predicts reward based on discriminator output using a log-style formulation.
 
         Args:
             state (Tensor): Current state tensor.
             next_state (Tensor): Next state tensor.
-            normalizer (Optional): Optional state normalizer.
 
         Returns:
             Tensor: Computed adversarial reward.
         """
         with torch.no_grad():
-            if normalizer is not None:
-                state = normalizer(state)
-                next_state = normalizer(next_state)
 
+            # No need to normalize here as normalization is done in forward()
             discriminator_logit = self.forward(torch.cat([state, next_state], dim=-1))
 
             if self.loss_type == "Wasserstein":
@@ -159,6 +174,14 @@ class Discriminator(nn.Module):
         expected = torch.ones_like(discriminator_output, device=self.device)
         return self.loss_fun(discriminator_output, expected)
 
+    def update_normalization(self, *batches: torch.Tensor) -> None:
+        """Update empirical statistics using provided AMP batches."""
+        if not self.empirical_normalization:
+            return
+        with torch.no_grad():
+            for batch in batches:
+                self.amp_normalizer.update(batch)
+
     def compute_loss(
         self,
         policy_d,
@@ -169,6 +192,8 @@ class Discriminator(nn.Module):
     ):
 
         # Compute gradient penalty to stabilize discriminator training.
+        sample_amp_expert = tuple(self.amp_normalizer(s) for s in sample_amp_expert)
+        sample_amp_policy = tuple(self.amp_normalizer(s) for s in sample_amp_policy)
         grad_pen_loss = self.compute_grad_pen(
             expert_states=sample_amp_expert,
             policy_states=sample_amp_policy,
