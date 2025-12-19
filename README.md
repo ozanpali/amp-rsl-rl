@@ -16,7 +16,7 @@ Alternatively, if you prefer to clone the repository and install it locally, fol
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/<your-username>/amp_rsl_rl.git
+    git clone https://github.com/gbionics/amp_rsl_rl.git
     cd amp_rsl_rl
     ```
 
